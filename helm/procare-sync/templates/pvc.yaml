@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "procare-sync.fullname" . }}-token-cache
+  labels:
+    {{- include "procare-sync.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.tokenCache.storageClass }}
+  storageClassName: {{ .Values.tokenCache.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.tokenCache.storageSize }}

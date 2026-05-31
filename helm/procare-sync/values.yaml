@@ -1,0 +1,62 @@
+# Deployment mode: "cronjob" or "deployment"
+mode: cronjob
+
+# CronJob schedule (used when mode=cronjob)
+schedule: "*/15 * * * *"
+
+image:
+  repository: ghcr.io/YOUR_ORG/procare-sync
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+procare:
+  siteUrl: https://api-school.procareconnect.com
+  authUrl: https://online-auth.procareconnect.com/sessions/
+  authToken: ""       # PROCARE_AUTH_TOKEN (preferred)
+  email: ""           # PROCARE_EMAIL
+  password: ""        # PROCARE_PASSWORD
+  siteId: ""          # PROCARE_SITE_ID
+
+db:
+  adapter: mysql      # mysql or postgres
+  host: ""            # leave empty to use bundled MySQL
+  port: 3306
+  name: procare
+  user: procare
+  password: ""        # required
+
+mysql:
+  enabled: true
+  auth:
+    database: procare
+    username: procare
+    password: ""      # set via --set mysql.auth.password=...
+    rootPassword: ""  # set via --set mysql.auth.rootPassword=...
+
+sync:
+  intervalMinutes: 15
+  activityLookbackDays: 30
+  pageSize: 100
+  runOnce: false
+
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 256Mi
+    cpu: 500m
+
+tokenCache:
+  storageSize: 10Mi
+  storageClass: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+serviceAccount:
+  create: false
+  name: ""
