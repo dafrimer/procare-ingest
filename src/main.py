@@ -12,7 +12,7 @@ from config import Config
 from auth import TokenManager
 from client import ProcareClient
 from sync.api_client import ApiClient
-from sync.runner import run_full_sync
+from sync.runner import run_and_exit, run_full_sync
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,9 +33,8 @@ def main():
     try:
         if config.run_once:
             logger.info("RUN_ONCE=true, running single sync")
-            counts = run_full_sync(client, api, config)
-            logger.info("Sync complete: %s", counts)
-            return
+            code = run_and_exit(client, api, config)
+            sys.exit(code)
 
         from apscheduler.schedulers.blocking import BlockingScheduler
         from datetime import datetime
