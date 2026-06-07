@@ -130,3 +130,16 @@ class SyncState(Base):
     last_synced_at = Column(DateTime)
     last_record_count = Column(Integer, default=0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    severity = Column(String(16), index=True)       # info | warning | critical
+    code = Column(String(64), index=True)           # auth_failed | rate_limited | sync_stalled | http_error | schema_drift | exception
+    entity = Column(String(64), nullable=True)      # kids | rooms | ... or null
+    message = Column(Text)
+    details = Column(JSON, nullable=True)
+    acknowledged = Column(Boolean, default=False, index=True)
+    acknowledged_at = Column(DateTime, nullable=True)
