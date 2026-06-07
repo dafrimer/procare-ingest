@@ -1,11 +1,12 @@
 import logging
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from api.db import get_session_dependency
-from shared.models import Contact, DailyActivity, Kid, Room, Staff
+from shared.models import Contact, DailyActivity, Kid, Room, Staff, SyncState
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,6 @@ _ENTITY_MAP = {
 
 
 def require_ingest_token(request: Request, authorization: str | None = Header(default=None)) -> None:
-    """Bearer token auth for ingest endpoints. Compares against INGEST_TOKEN env."""
     expected = request.app.state.config.ingest_token
     if not expected:
         raise HTTPException(503, "ingest disabled: INGEST_TOKEN not configured")
@@ -30,6 +30,16 @@ def require_ingest_token(request: Request, authorization: str | None = Header(de
     token = authorization.removeprefix("Bearer ").strip()
     if token != expected:
         raise HTTPException(403, "invalid ingest token")
+
+
+def _update_watermark(db: Session, entity: str, count: int) -> None:
+    state = db.get(SyncState, entity)
+    if state is None:
+        state = SyncState(entity=entity)
+        db.add(state)
+    state.last_synced_at = datetime.utcnow()
+    state.last_record_count = count
+    state.updated_at = datetime.utcnow()
 
 
 @router.post("/{entity}", dependencies=[Depends(require_ingest_token)])
@@ -52,6 +62,7 @@ def ingest(
         except Exception as e:
             logger.warning("ingest %s skipped record: %s", entity, e)
             skipped += 1
+    _update_watermark(db, entity, upserted)
     db.commit()
     logger.info("ingested entity=%s upserted=%d skipped=%d", entity, upserted, skipped)
     return {"entity": entity, "upserted": upserted, "skipped": skipped}
