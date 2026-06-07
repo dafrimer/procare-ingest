@@ -1,12 +1,9 @@
 import logging
-from datetime import datetime
 
 import httpx
-from sqlalchemy.orm import Session
 
 from client import ProcareClient
-from shared.models import Room
-from sync.base import upsert_batch, set_watermark
+from sync.api_client import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -34,17 +31,15 @@ def _map(raw: dict) -> dict:
     }
 
 
-def sync_rooms(db: Session, client: ProcareClient) -> int:
+def sync_rooms(client: ProcareClient, api: ApiClient) -> int:
     logger.info("Syncing rooms...")
     try:
-        total = 0
+        rows = []
         for page in client.paginate("/api/web/parent/rooms/"):
-            mapped = [_map(r) for r in page if r.get("id")]
-            if mapped:
-                total += upsert_batch(db, Room, mapped)
-        set_watermark(db, "rooms", datetime.utcnow(), total)
-        logger.info("Synced %d rooms", total)
-        return total
+            rows.extend(_map(r) for r in page if r.get("id"))
+        count = api.post_ingest("rooms", rows) if rows else 0
+        logger.info("Synced %d rooms", count)
+        return count
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (403, 404):
             logger.warning("Rooms endpoint not available (%d), skipping", e.response.status_code)
