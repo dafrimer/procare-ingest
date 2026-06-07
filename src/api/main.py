@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import ApiConfig
+from api.db import init_db
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,10 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
     )
 
     app.state.config = config
+
+    @app.on_event("startup")
+    def _startup():
+        init_db(config.sqlite_path)
 
     @app.get("/healthz", tags=["meta"])
     def healthz():
