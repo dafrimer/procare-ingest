@@ -4,7 +4,7 @@ from typing import Optional, Type
 
 from sqlalchemy.orm import Session
 
-from models import SyncState
+from shared.models import SyncState
 
 logger = logging.getLogger(__name__)
 

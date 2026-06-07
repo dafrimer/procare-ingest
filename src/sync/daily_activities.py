@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from client import ProcareClient
 from config import Config
-from models import DailyActivity, Kid
+from shared.models import DailyActivity, Kid
 from sync.base import set_watermark
 
 logger = logging.getLogger(__name__)

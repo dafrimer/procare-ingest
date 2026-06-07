@@ -4,7 +4,7 @@ from datetime import datetime, date
 from sqlalchemy.orm import Session
 
 from client import ProcareClient
-from models import Kid
+from shared.models import Kid
 from sync.base import upsert_batch, set_watermark
 
 logger = logging.getLogger(__name__)
