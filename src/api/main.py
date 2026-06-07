@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import ApiConfig
 from api.db import init_db
+from api.heartbeat import start_heartbeat
 from api.notifier import build_notifiers
 from api.routers import activities, alerts, contacts, ingest, kids, rooms, staff
 
@@ -29,10 +30,18 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
 
     app.state.config = config
     app.state.notifiers = build_notifiers()
+    app.state.heartbeat_task = None
 
     @app.on_event("startup")
-    def _startup():
+    async def _startup():
         init_db(config.sqlite_path)
+        app.state.heartbeat_task = start_heartbeat(app)
+
+    @app.on_event("shutdown")
+    async def _shutdown():
+        task = app.state.heartbeat_task
+        if task and not task.done():
+            task.cancel()
 
     @app.get("/healthz", tags=["meta"])
     def healthz():
