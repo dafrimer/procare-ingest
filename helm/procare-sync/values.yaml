@@ -1,11 +1,7 @@
-# Deployment mode: "cronjob" or "deployment"
-mode: cronjob
-
-# CronJob schedule (used when mode=cronjob)
 schedule: "*/15 * * * *"
 
 image:
-  repository: ghcr.io/YOUR_ORG/procare-sync
+  repository: ghcr.io/dafrimer/procare-sync
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -14,40 +10,27 @@ imagePullSecrets: []
 procare:
   siteUrl: https://api-school.procareconnect.com
   authUrl: https://online-auth.procareconnect.com/sessions/
-  authToken: ""       # PROCARE_AUTH_TOKEN (preferred)
-  email: ""           # PROCARE_EMAIL
-  password: ""        # PROCARE_PASSWORD
-  siteId: ""          # PROCARE_SITE_ID
+  authToken: ""
+  email: ""
+  password: ""
+  siteId: ""
 
-db:
-  adapter: mysql      # mysql or postgres
-  host: ""            # leave empty to use bundled MySQL
-  port: 3306
-  name: procare
-  user: procare
-  password: ""        # required
-
-mysql:
-  enabled: true
-  auth:
-    database: procare
-    username: procare
-    password: ""      # set via --set mysql.auth.password=...
-    rootPassword: ""  # set via --set mysql.auth.rootPassword=...
+# Where to find procare-api. Default assumes both charts in same namespace.
+api:
+  url: http://procare-api:8080
+  ingestToken: ""    # must match the api chart's ingestToken
 
 sync:
-  intervalMinutes: 15
   activityLookbackDays: 30
   pageSize: 100
-  runOnce: false
 
 resources:
   requests:
-    memory: 128Mi
-    cpu: 100m
+    memory: 64Mi
+    cpu: 50m
   limits:
-    memory: 256Mi
-    cpu: 500m
+    memory: 192Mi
+    cpu: 300m
 
 tokenCache:
   storageSize: 10Mi
@@ -56,7 +39,3 @@ tokenCache:
 nodeSelector: {}
 tolerations: []
 affinity: {}
-
-serviceAccount:
-  create: false
-  name: ""

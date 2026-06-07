@@ -8,13 +8,8 @@ data:
   PROCARE_SITE_URL: {{ .Values.procare.siteUrl | quote }}
   PROCARE_AUTH_URL: {{ .Values.procare.authUrl | quote }}
   PROCARE_SITE_ID: {{ .Values.procare.siteId | quote }}
-  DB_ADAPTER: {{ .Values.db.adapter | quote }}
-  DB_HOST: {{ include "procare-sync.dbHost" . | quote }}
-  DB_PORT: {{ .Values.db.port | quote }}
-  DB_NAME: {{ .Values.db.name | quote }}
-  DB_USER: {{ .Values.db.user | quote }}
-  SYNC_INTERVAL_MINUTES: {{ .Values.sync.intervalMinutes | quote }}
+  API_URL: {{ .Values.api.url | quote }}
   ACTIVITY_LOOKBACK_DAYS: {{ .Values.sync.activityLookbackDays | quote }}
   PAGE_SIZE: {{ .Values.sync.pageSize | quote }}
-  RUN_ONCE: {{ .Values.sync.runOnce | quote }}
+  RUN_ONCE: "true"
   TOKEN_CACHE_PATH: "/data/.token_cache.json"
