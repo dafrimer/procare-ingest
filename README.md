@@ -1,14 +1,51 @@
 # procare-ingest
 
-Self-hosted service that periodically syncs data from the (unofficial) Procare Online API into your own MySQL or Postgres database.
+Self-hosted three-service stack that periodically syncs data from the
+(unofficial) Procare Online API into a local SQLite database, and exposes
+that data to dashboards and AI agents over REST + MCP ó with built-in
+failure notifications.
 
-Built to run **anywhere on the deployment ladder**:
+```
+                    +--------------------+
+                    ¶  Procare Online    ¶
+                    ¶  (unofficial API)  ¶
+                    +--------------------+
+                             ¶ HTTPS
+                +------------?-----------+
+                ¶     procare-sync       ¶
+                ¶   (k3s CronJob, Job)   ¶
+                ¶ pull ? classify errors ¶
+                +------------------------+
+                             ¶ HTTP (bearer-auth)
+              +--------------?--------------+
+              ¶        procare-api          ¶
+              ¶ - FastAPI (REST + ingest)   ¶
+              ¶ - MCP server (/mcp)         ¶
+              ¶ - SQLite on PVC (WAL)       ¶
+              ¶ - Alerts + notifier         ¶
+              ¶ - Heartbeat watchdog        ¶
+              +-----------------------------+
+                   ¶               ¶
+        +----------?--+      +-----?---------+
+        ¶ dashboards  ¶      ¶   AI agents   ¶
+        ¶   (REST)    ¶      ¶ (MCP, Claude  ¶
+        ¶             ¶      ¶  Desktop, Ö)  ¶
+        +-------------+      +---------------+
+```
 
-1. üêç **Local Python** ‚Äî `python src/main.py`
-2. üê≥ **Docker Compose** ‚Äî `docker compose up`
-3. ‚ò∏Ô∏è **k3s / Kubernetes via Helm** ‚Äî `helm install`
+> ?? Procare does not publish a public API. This project uses the same endpoints
+> the official web app calls. Use at your own risk; respect rate limits.
 
-> ‚ö†Ô∏è Procare does not publish a public API. This project uses the same endpoints the official web app calls. Use at your own risk; respect rate limits.
+---
+
+## Why split this way
+
+- **procare-sync** is a stateless `Job` ó runs, exits. No DB driver, just `httpx`.
+  Easy to fit anywhere in a k3s cluster.
+- **procare-api** owns the SQLite file on a PVC. Single writer = no MySQL ops
+  burden. Read concurrency via WAL.
+- **Notifier + heartbeat** live inside procare-api so a stalled CronJob still
+  gets caught (it's the api that notices the silent failure).
 
 ---
 
@@ -16,99 +53,141 @@ Built to run **anywhere on the deployment ladder**:
 
 | Entity | Source endpoint | Table |
 |---|---|---|
-| Rooms | `/api/web/rooms` | `rooms` |
+| Rooms | `/api/web/parent/rooms/` | `rooms` |
 | Kids | `/api/web/parent/kids/` | `kids` |
-| Contacts | `/api/web/contacts` | `contacts`, `kid_contacts` |
+| Contacts | `/api/web/parent/contacts/` | `contacts` |
 | Daily activities | `/api/web/parent/daily_activities/` | `daily_activities` |
-| Staff | `/api/web/staff` | `staff` |
+| Staff | `/api/web/parent/staff/` | `staff` |
 
-Idempotent upserts; per-kid watermarks for daily activities.
+Plus `alerts` and `sync_state` tables maintained by the api.
 
 ---
 
 ## 1. Get a Procare auth token
 
-The easiest path:
+Easiest:
 
 ```bash
 pip install httpx
 python scripts/get_token.py
 ```
 
-Enter your Procare email + password. The script prints your `auth_token`, your sites, and a ready-to-paste `.env` block.
-
-**Or extract it from DevTools:**
-
-1. Open <https://schools.procareconnect.com> and log in.
-2. Open DevTools ‚Üí **Network** tab ‚Üí filter `XHR`.
-3. Click any data request (e.g. `kids`).
-4. In **Request Headers**, copy the value of `Authorization` (just the token ‚Äî **no `Bearer ` prefix**).
+Or extract from DevTools ? Network ? any XHR ? `Authorization` header
+(value only, **no `Bearer `** prefix).
 
 ---
 
-## 2. Configure
+## 2. Run
 
-Copy and edit:
+### Option A ó Docker Compose (recommended for local)
 
 ```bash
 cp .env.example .env
-```
-
-Minimum required:
-
-```env
-PROCARE_AUTH_TOKEN=...           # from step 1
-PROCARE_SITE_URL=https://api-school.procareconnect.com
-PROCARE_SITE_ID=<your-site-id>
-
-DB_ADAPTER=mysql                 # or "postgres"
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=procare
-DB_USER=procare
-DB_PASSWORD=changeme
-```
-
-See `.env.example` for the full list (scheduling, log level, lookback window, etc.).
-
----
-
-## 3. Run
-
-### Option A ‚Äî Local Python
-
-```bash
-pip install -r requirements.txt
-python src/main.py
-```
-
-`RUN_ONCE=true` exits after one sync. Otherwise APScheduler runs on `SYNC_CRON` (default `*/15 * * * *`).
-
-### Option B ‚Äî Docker Compose
-
-Brings up MySQL 8 + the sync service:
-
-```bash
+# fill in PROCARE_AUTH_TOKEN (and PROCARE_SITE_ID) + set INGEST_TOKEN to any random string
 docker compose up -d
 docker compose logs -f procare-sync
 ```
 
-### Option C ‚Äî Helm on k3s / Kubernetes
+REST: <http://localhost:8080/docs>  
+MCP:  `http://localhost:8080/mcp`
+
+### Option B ó Local Python (two processes)
 
 ```bash
-helm install procare-sync ./helm/procare-sync \
-  --set secrets.procareAuthToken=$PROCARE_AUTH_TOKEN \
-  --set config.procareSiteId=<site-id> \
-  --set mysql.enabled=true \
-  --set mysql.auth.rootPassword=changeme \
-  --set mysql.auth.password=changeme
+pip install -r requirements.txt -r requirements-sync.txt
+# terminal 1
+PYTHONPATH=src uvicorn api.main:app --port 8080
+# terminal 2
+PYTHONPATH=src python src/main.py
 ```
 
-Two modes via `mode:`
-- `cronjob` (default) ‚Äî `RUN_ONCE=true`, `concurrencyPolicy: Forbid`.
-- `deployment` ‚Äî long-running pod with APScheduler.
+### Option C ó k3s / Kubernetes via Helm
 
-Set `mysql.enabled=false` and point `config.dbHost` at an external DB to use your own.
+```bash
+# 1. Install the api (long-running deployment + SQLite PVC)
+helm install procare-api ./helm/procare-api \
+  --set ingestToken=$INGEST_TOKEN \
+  --set notify.backend=webhook \
+  --set notify.webhookUrl=$NTFY_URL \
+  --set notify.webhookFormat=ntfy
+
+# 2. Install the sync CronJob, pointing at the api
+helm install procare-sync ./helm/procare-sync \
+  --set api.ingestToken=$INGEST_TOKEN \
+  --set procare.authToken=$PROCARE_AUTH_TOKEN \
+  --set procare.siteId=$PROCARE_SITE_ID
+```
+
+---
+
+## 3. Use the data
+
+### REST (dashboards)
+
+```bash
+curl http://procare-api/kids
+curl 'http://procare-api/activities?date_from=2026-06-01&kid_id=...'
+curl http://procare-api/alerts?acknowledged=false
+```
+
+Full schema: <http://procare-api/docs>
+
+### MCP (agents)
+
+Streamable HTTP at `/mcp`. Add to Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "procare": {
+      "url": "http://procare-api.local/mcp"
+    }
+  }
+}
+```
+
+Tools available: `list_kids`, `get_kid`, `list_rooms`, `list_staff`,
+`list_contacts`, `list_activities`, `counts`.
+
+---
+
+## 4. Notifications (so you actually know when it breaks)
+
+Procare is unofficial ? tokens get rotated, accounts get locked, the API
+might change shape. Three failure types are detected and notified:
+
+| Source | When it fires |
+|---|---|
+| `auth_failed` (critical) | Procare returns 401/403 ó token rotated or account locked |
+| `rate_limited` (warning) | 429 from Procare |
+| `http_error` / `network_error` (warning) | 5xx / connection issues |
+| `sync_stalled` (warning) | api hasn't seen a successful sync within threshold (heartbeat) |
+| `exception` (warning) | unhandled exception during sync |
+
+Alerts are deduped per `(code, entity)` within `ALERT_COOLDOWN_MINUTES`
+(default 60) so a 15-min CronJob won't ping you 96◊/day for the same
+problem.
+
+### Pick a notifier backend (env on procare-api):
+
+| Backend | env vars |
+|---|---|
+| Log only (default) | `NOTIFY_BACKEND=log` |
+| Generic webhook | `NOTIFY_BACKEND=webhook`, `NOTIFY_WEBHOOK_URL=...`, `NOTIFY_WEBHOOK_FORMAT=generic` |
+| Discord | `NOTIFY_WEBHOOK_FORMAT=discord` |
+| Slack | `NOTIFY_WEBHOOK_FORMAT=slack` |
+| ntfy.sh / Gotify | `NOTIFY_WEBHOOK_FORMAT=ntfy`, URL = your topic URL |
+| SMTP | `NOTIFY_BACKEND=smtp` + `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TO`, `SMTP_FROM` |
+| Apprise (80+ services) | `NOTIFY_BACKEND=apprise` + `APPRISE_URLS=...` (requires `pip install apprise`) |
+
+You can list multiple: `NOTIFY_BACKEND=log,webhook,smtp`.
+
+Manual alert browsing/ack:
+
+```bash
+curl http://procare-api/alerts?acknowledged=false
+curl -X POST http://procare-api/alerts/42/ack
+```
 
 ---
 
@@ -116,38 +195,35 @@ Set `mysql.enabled=false` and point `config.dbHost` at an external DB to use you
 
 ```
 src/
-  config.py            env-driven config
-  auth.py              token cache + refresh
-  client.py            httpx + retry + paginate
-  db.py                engine/session factory
-  models/              SQLAlchemy ORM models
-  sync/
-    base.py            upsert + watermark helpers
-    {kids,rooms,contacts,staff,daily_activities}.py
-    runner.py          orchestration order
-  main.py              RUN_ONCE vs scheduler
-scripts/
-  get_token.py         interactive token helper
-helm/procare-sync/     Helm chart (cronjob or deployment)
-Dockerfile
+  api/                   procare-api service
+    main.py              FastAPI app + MCP mount + heartbeat
+    config.py            ApiConfig (env-driven)
+    db.py                SQLite engine (WAL, FK on)
+    routers/             REST endpoints (one per entity + ingest + alerts)
+    mcp_server.py        MCP tools (list_kids, list_activities, ...)
+    notifier.py          log / webhook / smtp / apprise
+    heartbeat.py         background staleness watchdog
+  sync/                  procare-sync service
+    api_client.py        bearer-auth HTTP client for procare-api
+    error_reporting.py   classify + report httpx errors as alerts
+    runner.py            orchestrates entity syncs
+    kids.py rooms.py contacts.py staff.py daily_activities.py
+  shared/
+    models.py            SQLAlchemy models (single source of truth)
+  auth.py client.py      Procare HTTP client + token manager (used by sync)
+  config.py main.py      sync config + entrypoint
+helm/
+  procare-api/           Deployment + Service + PVC + Ingress
+  procare-sync/          CronJob only
+Dockerfile.api
+Dockerfile.sync
 docker-compose.yml
-Makefile
-```
-
----
-
-## Make targets
-
-```bash
-make dev        # run locally
-make build      # build docker image
-make push       # push to registry (set IMAGE)
-make compose-up
-make compose-down
+requirements.txt         (api)
+requirements-sync.txt    (sync)
 ```
 
 ---
 
 ## License
 
-MIT ‚Äî see `LICENSE`.
+MIT ó see `LICENSE`.
