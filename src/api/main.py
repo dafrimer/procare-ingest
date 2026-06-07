@@ -38,7 +38,7 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
 
     @app.get("/", tags=["meta"])
     def root():
-        return {"service": "procare-api", "version": app.version}
+        return {"service": "procare-api", "version": app.version, "mcp": "/mcp"}
 
     app.include_router(kids.router)
     app.include_router(rooms.router)
@@ -46,6 +46,14 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
     app.include_router(staff.router)
     app.include_router(activities.router)
     app.include_router(ingest.router)
+
+    try:
+        from api.mcp_server import build_mcp_server
+        mcp = build_mcp_server()
+        app.mount("/mcp", mcp.streamable_http_app())
+        logger.info("MCP server mounted at /mcp")
+    except ImportError as e:
+        logger.warning("mcp package not installed; MCP endpoint disabled (%s)", e)
 
     return app
 
