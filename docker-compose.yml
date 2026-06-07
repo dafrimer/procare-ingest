@@ -1,33 +1,47 @@
-version: "3.9"
-
 services:
-  mysql:
-    image: mysql:8.0
+  procare-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: procare-api:dev
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: ${DB_NAME:-procare}
-      MYSQL_USER: ${DB_USER:-procare}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      SQLITE_PATH: /data/procare.db
+      INGEST_TOKEN: ${INGEST_TOKEN}
+      LOG_LEVEL: info
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      NOTIFY_BACKEND: ${NOTIFY_BACKEND:-log}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
+      NOTIFY_WEBHOOK_FORMAT: ${NOTIFY_WEBHOOK_FORMAT:-generic}
+      ALERT_COOLDOWN_MINUTES: ${ALERT_COOLDOWN_MINUTES:-60}
+      HEARTBEAT_STALE_MINUTES: ${HEARTBEAT_STALE_MINUTES:-30}
     volumes:
-      - mysql_data:/var/lib/mysql
+      - procare_data:/data
+    ports:
+      - "${API_PORT_HOST:-8080}:8080"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 10s
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/healthz').status==200 else 1)"]
+      interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 10s
+    restart: unless-stopped
 
   procare-sync:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.sync
+    image: procare-sync:dev
     env_file: .env
     environment:
-      DB_HOST: mysql
+      API_URL: http://procare-api:8080
+      INGEST_TOKEN: ${INGEST_TOKEN}
     volumes:
-      - token_cache:/data
+      - sync_cache:/data
     depends_on:
-      mysql:
+      procare-api:
         condition: service_healthy
+    restart: unless-stopped
 
 volumes:
-  mysql_data:
-  token_cache:
+  procare_data:
+  sync_cache:
