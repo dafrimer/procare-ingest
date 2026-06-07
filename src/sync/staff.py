@@ -5,7 +5,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from client import ProcareClient
-from models import Staff
+from shared.models import Staff
 from sync.base import upsert_batch, set_watermark
 
 logger = logging.getLogger(__name__)
