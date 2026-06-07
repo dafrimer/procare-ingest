@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from config import Config
 from auth import TokenManager
 from client import ProcareClient
-from db import init_db, get_db
+from sync.api_client import ApiClient
 from sync.runner import run_full_sync
 
 logging.basicConfig(
@@ -25,16 +25,15 @@ logger = logging.getLogger(__name__)
 def main():
     config = Config()
     config.validate()
-    init_db(config)
 
     token_manager = TokenManager(config)
     client = ProcareClient(config, token_manager)
+    api = ApiClient(config.api_url, config.ingest_token)
 
     try:
         if config.run_once:
             logger.info("RUN_ONCE=true, running single sync")
-            with get_db() as db:
-                counts = run_full_sync(db, client, config)
+            counts = run_full_sync(client, api, config)
             logger.info("Sync complete: %s", counts)
             return
 
@@ -44,8 +43,7 @@ def main():
         def sync_job():
             logger.info("Scheduled sync triggered")
             try:
-                with get_db() as db:
-                    counts = run_full_sync(db, client, config)
+                counts = run_full_sync(client, api, config)
                 logger.info("Sync complete: %s", counts)
             except Exception as e:
                 logger.error("Sync failed: %s", e, exc_info=True)
@@ -65,6 +63,7 @@ def main():
             scheduler.shutdown()
     finally:
         client.close()
+        api.close()
 
 
 if __name__ == "__main__":

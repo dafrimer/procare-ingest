@@ -1,12 +1,9 @@
 import logging
-from datetime import datetime
 
 import httpx
-from sqlalchemy.orm import Session
 
 from client import ProcareClient
-from shared.models import Staff
-from sync.base import upsert_batch, set_watermark
+from sync.api_client import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +27,15 @@ def _map(raw: dict) -> dict:
     }
 
 
-def sync_staff(db: Session, client: ProcareClient) -> int:
+def sync_staff(client: ProcareClient, api: ApiClient) -> int:
     logger.info("Syncing staff...")
     try:
-        total = 0
+        rows = []
         for page in client.paginate("/api/web/parent/staff/"):
-            mapped = [_map(r) for r in page if r.get("id")]
-            if mapped:
-                total += upsert_batch(db, Staff, mapped)
-        set_watermark(db, "staff", datetime.utcnow(), total)
-        logger.info("Synced %d staff", total)
-        return total
+            rows.extend(_map(r) for r in page if r.get("id"))
+        count = api.post_ingest("staff", rows) if rows else 0
+        logger.info("Synced %d staff", count)
+        return count
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (403, 404):
             logger.warning("Staff endpoint not available (%d), skipping", e.response.status_code)

@@ -1,11 +1,8 @@
 import logging
-from datetime import datetime, date
-
-from sqlalchemy.orm import Session
+from datetime import date
 
 from client import ProcareClient
-from shared.models import Kid
-from sync.base import upsert_batch, set_watermark
+from sync.api_client import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +18,7 @@ def _map(raw: dict) -> dict:
     dob = None
     if dob_raw:
         try:
-            dob = date.fromisoformat(str(dob_raw)[:10])
+            dob = date.fromisoformat(str(dob_raw)[:10]).isoformat()
         except (ValueError, TypeError):
             pass
 
@@ -41,13 +38,11 @@ def _map(raw: dict) -> dict:
     }
 
 
-def sync_kids(db: Session, client: ProcareClient) -> int:
+def sync_kids(client: ProcareClient, api: ApiClient) -> int:
     logger.info("Syncing kids...")
-    total = 0
+    rows = []
     for page in client.paginate("/api/web/parent/kids/"):
-        mapped = [_map(r) for r in page if r.get("id")]
-        if mapped:
-            total += upsert_batch(db, Kid, mapped)
-    set_watermark(db, "kids", datetime.utcnow(), total)
-    logger.info("Synced %d kids", total)
-    return total
+        rows.extend(_map(r) for r in page if r.get("id"))
+    count = api.post_ingest("kids", rows) if rows else 0
+    logger.info("Synced %d kids", count)
+    return count

@@ -2,13 +2,9 @@ import logging
 from datetime import datetime, date, timedelta
 from typing import Optional
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from client import ProcareClient
 from config import Config
-from shared.models import DailyActivity, Kid
-from sync.base import set_watermark
+from sync.api_client import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -21,28 +17,27 @@ _DT_FORMATS = [
 ]
 
 
-def _parse_dt(value) -> Optional[datetime]:
+def _parse_dt(value) -> Optional[str]:
     if not value:
         return None
     if isinstance(value, datetime):
-        return value
+        return value.isoformat()
     s = str(value).strip()
     for fmt in _DT_FORMATS:
         try:
-            return datetime.strptime(s[:len(fmt)], fmt)
+            return datetime.strptime(s[:len(fmt)], fmt).isoformat()
         except ValueError:
             continue
-    logger.debug("Could not parse datetime: %r", value)
     return None
 
 
-def _parse_date(value) -> Optional[date]:
+def _parse_date(value) -> Optional[str]:
     if not value:
         return None
     if isinstance(value, date):
-        return value
+        return value.isoformat()
     dt = _parse_dt(value)
-    return dt.date() if dt else None
+    return dt[:10] if dt else None
 
 
 def _map(raw: dict) -> dict:
@@ -71,62 +66,38 @@ def _map(raw: dict) -> dict:
     }
 
 
-def sync_daily_activities(db: Session, client: ProcareClient, config: Config) -> int:
+def sync_daily_activities(client: ProcareClient, api: ApiClient, config: Config) -> int:
     logger.info("Syncing daily activities...")
     date_from = (datetime.utcnow().date() - timedelta(days=config.activity_lookback_days)).isoformat()
     date_to = datetime.utcnow().date().isoformat()
 
-    kids = db.execute(
-        select(Kid).where(Kid.status != "inactive")
-    ).scalars().all()
-
-    if not kids:
-        logger.warning("No active kids found in DB; skipping daily activities sync")
+    kid_ids = api.list_active_kid_ids()
+    if not kid_ids:
+        logger.warning("No active kids known to procare-api; skipping daily activities sync")
         return 0
 
     total = 0
-    for kid in kids:
-        kid_total = _sync_kid_activities(db, client, config, kid.id, date_from, date_to)
-        total += kid_total
-
-    set_watermark(db, "daily_activities", datetime.utcnow(), total)
+    for kid_id in kid_ids:
+        total += _sync_kid_activities(client, api, kid_id, date_from, date_to)
     logger.info("Synced %d daily activity records", total)
     return total
 
 
-def _sync_kid_activities(
-    db: Session,
-    client: ProcareClient,
-    config: Config,
-    kid_id: str,
-    date_from: str,
-    date_to: str,
-) -> int:
+def _sync_kid_activities(client: ProcareClient, api: ApiClient, kid_id: str, date_from: str, date_to: str) -> int:
     path = "/api/web/parent/daily_activities/"
     params = {
         "kid_id": kid_id,
         "filters[daily_activity][date_from]": date_from,
         "filters[daily_activity][date_to]": date_to,
     }
-    count = 0
+    rows: list[dict] = []
     try:
         for page in client.paginate(path, extra_params=params):
             for raw in page:
-                mapped = _map(raw)
-                if not mapped.get("procare_id") or not mapped.get("kid_id"):
-                    continue
-                existing = db.execute(
-                    select(DailyActivity).where(DailyActivity.procare_id == mapped["procare_id"])
-                ).scalar_one_or_none()
-                if existing is None:
-                    db.add(DailyActivity(**mapped))
-                else:
-                    for k, v in mapped.items():
-                        if k != "id":
-                            setattr(existing, k, v)
-                count += 1
-            db.commit()
+                m = _map(raw)
+                if m.get("procare_id") and m.get("kid_id"):
+                    rows.append(m)
     except Exception as e:
-        logger.error("Error syncing activities for kid %s: %s", kid_id, e)
-        db.rollback()
-    return count
+        logger.error("Error fetching activities for kid %s: %s", kid_id, e)
+        return 0
+    return api.post_ingest("activities", rows) if rows else 0
