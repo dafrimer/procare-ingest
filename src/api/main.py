@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import ApiConfig
 from api.db import init_db
-from api.routers import activities, contacts, kids, rooms, staff
+from api.routers import activities, contacts, ingest, kids, rooms, staff
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
     app.include_router(contacts.router)
     app.include_router(staff.router)
     app.include_router(activities.router)
+    app.include_router(ingest.router)
 
     return app
 
