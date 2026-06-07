@@ -8,6 +8,7 @@ from sqlalchemy import and_, desc, func, select
 from sqlalchemy.orm import Session
 
 from api.db import get_session_dependency
+from api.notifier import dispatch
 from api.routers.ingest import require_ingest_token
 from shared.models import Alert
 
@@ -38,14 +39,12 @@ class AlertOut(BaseModel):
     acknowledged_at: Optional[datetime] = None
 
 
-def _cooldown_minutes(request: Request) -> int:
+def _cooldown_minutes() -> int:
     import os
     return int(os.getenv("ALERT_COOLDOWN_MINUTES", "60"))
 
 
 def _record_alert(db: Session, payload: AlertIn, cooldown_minutes: int) -> tuple[Alert, bool]:
-    """Insert an alert unless an identical (code, entity, unack) alert exists within cooldown.
-    Returns (alert, created)."""
     cutoff = datetime.utcnow() - timedelta(minutes=cooldown_minutes)
     existing = db.execute(
         select(Alert).where(
@@ -78,10 +77,15 @@ def post_alert(
     payload: AlertIn,
     db: Session = Depends(get_session_dependency),
 ):
-    cooldown = _cooldown_minutes(request)
+    cooldown = _cooldown_minutes()
     alert, created = _record_alert(db, payload, cooldown)
     if created:
         logger.warning("ALERT [%s/%s] %s: %s", alert.severity, alert.code, alert.entity or "-", alert.message)
+        notifiers = getattr(request.app.state, "notifiers", None)
+        if notifiers:
+            title = f"[{alert.code}] {alert.entity or 'general'}"
+            body = alert.message
+            dispatch(notifiers, title, body, alert.severity)
     else:
         logger.info("ALERT deduped (code=%s entity=%s)", payload.code, payload.entity)
     return {"id": alert.id, "created": created, "deduped": not created}

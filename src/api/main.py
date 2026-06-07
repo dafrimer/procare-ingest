@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import ApiConfig
 from api.db import init_db
+from api.notifier import build_notifiers
 from api.routers import activities, alerts, contacts, ingest, kids, rooms, staff
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
     )
 
     app.state.config = config
+    app.state.notifiers = build_notifiers()
 
     @app.on_event("startup")
     def _startup():
