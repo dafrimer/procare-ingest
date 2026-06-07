@@ -1,26 +1,31 @@
-IMAGE ?= ghcr.io/$(shell git config user.name | tr '[:upper:]' '[:lower:]')/procare-sync
-TAG ?= latest
+.PHONY: dev-api dev-sync build build-api build-sync push compose-up compose-down compose-logs
 
-.PHONY: dev build push compose-up compose-down lint
+IMAGE_API ?= ghcr.io/dafrimer/procare-api:dev
+IMAGE_SYNC ?= ghcr.io/dafrimer/procare-sync:dev
 
-dev:
-	RUN_ONCE=true PYTHONPATH=src python src/main.py
+dev-api:
+PYTHONPATH=src uvicorn api.main:app --reload --port 8080
 
-build:
-	docker build -t $(IMAGE):$(TAG) .
+dev-sync:
+PYTHONPATH=src python src/main.py
 
-push:
-	docker push $(IMAGE):$(TAG)
+build: build-api build-sync
+
+build-api:
+docker build -f Dockerfile.api -t $(IMAGE_API) .
+
+build-sync:
+docker build -f Dockerfile.sync -t $(IMAGE_SYNC) .
+
+push: build
+docker push $(IMAGE_API)
+docker push $(IMAGE_SYNC)
 
 compose-up:
-	docker compose up --build
+docker compose up -d --build
 
 compose-down:
-	docker compose down
+docker compose down
 
-lint:
-	python -m py_compile src/config.py src/auth.py src/client.py src/db.py src/main.py \
-		src/models/__init__.py \
-		src/sync/base.py src/sync/runner.py src/sync/kids.py \
-		src/sync/daily_activities.py src/sync/rooms.py \
-		src/sync/contacts.py src/sync/staff.py
+compose-logs:
+docker compose logs -f --tail=200
