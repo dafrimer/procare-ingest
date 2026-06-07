@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import ApiConfig
 from api.db import init_db
+from api.routers import activities, contacts, kids, rooms, staff
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,12 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
     @app.get("/", tags=["meta"])
     def root():
         return {"service": "procare-api", "version": app.version}
+
+    app.include_router(kids.router)
+    app.include_router(rooms.router)
+    app.include_router(contacts.router)
+    app.include_router(staff.router)
+    app.include_router(activities.router)
 
     return app
 
