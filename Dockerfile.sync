@@ -1,0 +1,20 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements-sync.txt .
+RUN pip install --no-cache-dir -r requirements-sync.txt
+
+COPY src/auth.py ./src/auth.py
+COPY src/client.py ./src/client.py
+COPY src/config.py ./src/config.py
+COPY src/main.py ./src/main.py
+COPY src/__init__.py ./src/__init__.py
+COPY src/sync/ ./src/sync/
+
+RUN mkdir -p /data
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src
+
+CMD ["python", "src/main.py"]
