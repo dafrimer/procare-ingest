@@ -1,11 +1,6 @@
 apiVersion: v2
 name: procare-sync
-description: Procare Online data sync service
+description: CronJob that pulls Procare data into procare-api
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
-dependencies:
-  - name: mysql
-    version: "11.x.x"
-    repository: "https://charts.bitnami.com/bitnami"
-    condition: mysql.enabled
+version: 0.2.0
+appVersion: "0.2.0"
