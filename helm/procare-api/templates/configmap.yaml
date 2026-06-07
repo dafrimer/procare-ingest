@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "procare-api.fullname" . }}
+  labels:
+    {{- include "procare-api.labels" . | nindent 4 }}
+data:
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  SQLITE_PATH: {{ .Values.config.sqlitePath | quote }}
+  ALERT_COOLDOWN_MINUTES: {{ .Values.config.alertCooldownMinutes | quote }}
+  HEARTBEAT_ENABLED: {{ .Values.config.heartbeatEnabled | quote }}
+  HEARTBEAT_CHECK_SECONDS: {{ .Values.config.heartbeatCheckSeconds | quote }}
+  HEARTBEAT_STALE_MINUTES: {{ .Values.config.heartbeatStaleMinutes | quote }}
+  HEARTBEAT_ENTITIES: {{ .Values.config.heartbeatEntities | quote }}
+  NOTIFY_BACKEND: {{ .Values.notify.backend | quote }}
+  NOTIFY_WEBHOOK_URL: {{ .Values.notify.webhookUrl | quote }}
+  NOTIFY_WEBHOOK_FORMAT: {{ .Values.notify.webhookFormat | quote }}
+  APPRISE_URLS: {{ .Values.notify.appriseUrls | quote }}
+  SMTP_HOST: {{ .Values.smtp.host | quote }}
+  SMTP_PORT: {{ .Values.smtp.port | quote }}
+  SMTP_FROM: {{ .Values.smtp.fromAddr | quote }}
+  SMTP_TO: {{ .Values.smtp.toAddr | quote }}
+  SMTP_TLS: {{ .Values.smtp.tls | quote }}

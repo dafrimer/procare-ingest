@@ -1,0 +1,63 @@
+image:
+  repository: ghcr.io/dafrimer/procare-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: procare.local
+  tls: []
+
+# REQUIRED: shared with procare-sync
+ingestToken: ""
+
+config:
+  logLevel: info
+  corsOrigins: "*"
+  sqlitePath: /data/procare.db
+  alertCooldownMinutes: 60
+  heartbeatEnabled: true
+  heartbeatCheckSeconds: 300
+  heartbeatStaleMinutes: 30
+  heartbeatEntities: kids,rooms,daily_activities
+
+notify:
+  backend: log
+  webhookUrl: ""
+  webhookFormat: generic
+  appriseUrls: ""
+
+smtp:
+  host: ""
+  port: 587
+  user: ""
+  password: ""
+  fromAddr: ""
+  toAddr: ""
+  tls: true
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

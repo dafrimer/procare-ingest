@@ -1,0 +1,6 @@
+apiVersion: v2
+name: procare-api
+description: REST + MCP server backed by SQLite for procare-ingest
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
