@@ -1,4 +1,4 @@
-# procare-api dependencies (default — used by Dockerfile.api)
+# procare-api dependencies (default -- used by Dockerfile.api)
 httpx>=0.27.0
 tenacity>=8.2.0
 SQLAlchemy>=2.0.0
