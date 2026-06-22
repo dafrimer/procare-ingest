@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 from api.db import get_session_dependency
@@ -42,6 +43,34 @@ def _update_watermark(db: Session, entity: str, count: int) -> None:
     state.updated_at = datetime.utcnow()
 
 
+def _upsert(db: Session, model_cls: type, key: str, rec: dict) -> None:
+    """Insert or update a record, identifying existing rows by ``key``.
+
+    ``key`` is the natural key from Procare. When it is the model's primary
+    key (Kid/Room/Contact/Staff use the Procare UUID as PK), ``Session.merge``
+    finds and updates the row. When it differs from the PK -- DailyActivity has
+    an autoincrement ``id`` PK but is keyed by ``procare_id`` -- ``merge`` would
+    never match (the caller cannot send the DB-assigned ``id``) and would keep
+    INSERTing until the UNIQUE constraint silently drops the update. In that
+    case we look the row up by ``key`` and update it in place, which also lets
+    the ``synced_at`` ``onupdate`` fire.
+    """
+    pk_names = {c.name for c in inspect(model_cls).primary_key}
+    if key in pk_names:
+        db.merge(model_cls(**rec))
+        return
+
+    existing = db.execute(
+        select(model_cls).filter_by(**{key: rec.get(key)})
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(model_cls(**rec))
+    else:
+        for field, value in rec.items():
+            if field != key and field not in pk_names:
+                setattr(existing, field, value)
+
+
 @router.post("/{entity}", dependencies=[Depends(require_ingest_token)])
 def ingest(
     entity: str,
@@ -50,14 +79,13 @@ def ingest(
 ):
     if entity not in _ENTITY_MAP:
         raise HTTPException(400, f"unknown entity: {entity}")
-    model_cls, _key = _ENTITY_MAP[entity]
+    model_cls, key = _ENTITY_MAP[entity]
 
     upserted = 0
     skipped = 0
     for rec in records:
         try:
-            obj = model_cls(**rec)
-            db.merge(obj)
+            _upsert(db, model_cls, key, rec)
             upserted += 1
         except Exception as e:
             logger.warning("ingest %s skipped record: %s", entity, e)
